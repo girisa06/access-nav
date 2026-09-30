@@ -4,14 +4,20 @@ Mapbox has no step-free data, so options are built from curated Chennai Metro
 stations (all lift-equipped; coordinates approximate) + Mapbox distance/geometry
 where available. Metro gets GTFS-RT updates (mock fallback).
 """
+import threading
+
 import requests
 from fastapi import APIRouter, HTTPException
 
+from ..cache import cache_get, cache_set
 from ..config import settings
 from ..gtfs import get_realtime_updates
 from .reports import _km
 
 router = APIRouter(prefix="/api", tags=["routes"])
+
+_locks: dict[str, threading.Lock] = {}
+_locks_guard = threading.Lock()
 
 METRO_STATIONS = {
     "Chennai Airport": (12.9908, 80.1690),
@@ -65,7 +71,23 @@ def _mapbox(profile: str, a, b) -> dict | None:
 @router.get("/routes")
 def get_routes(start: str, end: str, disability: str = "wheelchair"):
     a, b = _parse(start), _parse(end)
-    drive = _mapbox("driving", a, b)
+    key = f"routes:{a[0]:.3f},{a[1]:.3f}:{b[0]:.3f},{b[1]:.3f}:{disability}"
+    cached = cache_get(key)
+    if cached:
+        return cached
+    with _locks_guard:
+        lock = _locks.setdefault(key, threading.Lock())
+    with lock:  # single-flight: concurrent misses wait for one build
+        cached = cache_get(key)
+        if cached:
+            return cached
+        result = _build_routes(a, b, disability)
+        cache_set(key, result, ttl=30)  # GTFS-RT refresh window
+        return result
+
+
+def _build_routes(a, b, disability):
+    drive =_mapbox("driving", a, b)
     km = drive["distance_km"] if drive else _km(*a, *b) * 1.3
     drive_min = drive["duration_min"] if drive else km / 25 * 60
 
