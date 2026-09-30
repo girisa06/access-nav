@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from .config import settings
-from .routers import auth
+from .routers import auth, reports, routes, sos
 
 app = FastAPI(title="AccessiNav API")
 
@@ -15,6 +15,9 @@ app.add_middleware(
 )
 
 app.include_router(auth.router)
+app.include_router(reports.router)
+app.include_router(routes.router)
+app.include_router(sos.router)
 
 
 @app.get("/api/health")
