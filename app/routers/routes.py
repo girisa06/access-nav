@@ -1,8 +1,8 @@
 """Accessible route options for Chennai.
 
-Mapbox has no step-free data, so options are built from curated Chennai Metro
-stations (all lift-equipped; coordinates approximate) + Mapbox distance/geometry
-where available. Metro gets GTFS-RT updates (mock fallback).
+Mapbox has no step-free data, so options are built from the 44 real CMRL stations
+(app/data/cmrl.json, from ungalsoththu/ChennaiGTFS, ODbL) + Mapbox distance/geometry
+where available. Metro gets timetable-based updates (live GTFS-RT if configured).
 """
 import threading
 
@@ -11,7 +11,7 @@ from fastapi import APIRouter, HTTPException
 
 from ..cache import cache_get, cache_set
 from ..config import settings
-from ..gtfs import get_realtime_updates
+from ..gtfs import CMRL, get_realtime_updates
 from .reports import _km
 
 router = APIRouter(prefix="/api", tags=["routes"])
@@ -19,26 +19,7 @@ router = APIRouter(prefix="/api", tags=["routes"])
 _locks: dict[str, threading.Lock] = {}
 _locks_guard = threading.Lock()
 
-METRO_STATIONS = {
-    "Chennai Airport": (12.9908, 80.1690),
-    "Meenambakkam": (12.9877, 80.1756),
-    "St. Thomas Mount": (13.0003, 80.1985),
-    "Alandur": (13.0035, 80.2043),
-    "Guindy": (13.0087, 80.2130),
-    "Little Mount": (13.0159, 80.2216),
-    "Saidapet": (13.0225, 80.2247),
-    "Nandanam": (13.0308, 80.2401),
-    "Teynampet": (13.0380, 80.2473),
-    "AG-DMS": (13.0448, 80.2482),
-    "Thousand Lights": (13.0580, 80.2545),
-    "LIC": (13.0640, 80.2665),
-    "Government Estate": (13.0722, 80.2732),
-    "Chennai Central": (13.0827, 80.2757),
-    "Egmore": (13.0788, 80.2609),
-    "Vadapalani": (13.0505, 80.2122),
-    "Ashok Nagar": (13.0364, 80.2123),
-    "Koyambedu": (13.0693, 80.1946),
-}
+METRO_STATIONS = {s["name"]: (s["lat"], s["lon"]) for s in CMRL["stations"]}
 
 
 def _parse(s: str) -> tuple[float, float]:
@@ -109,13 +90,13 @@ def _build_routes(a, b, disability):
         "id": 2, "mode": "Accessible Cab", "duration": f"{round(drive_min + 6)} min",
         "distance": f"{km:.1f} km", "accessible": True, "steps": 0, "stops": 0,
         "geometry": drive["geometry"] if drive else None,
-        "realtime_updates": {"delay_min": 0, "vehicle_position": None, "next_arrival": "6 min"},
+        "realtime_updates": {"delay_min": 0, "vehicle_position": None, "next_arrival": "6 min", "source": "estimate"},
     })
     routes.append({
         "id": 3, "mode": "Low-floor Bus", "duration": f"{round(km / 15 * 60 + 8)} min",
         "distance": f"{km:.1f} km", "accessible": disability != "wheelchair", "steps": 2,
         "stops": max(2, round(km / 0.8)),
-        "realtime_updates": {"delay_min": 5, "vehicle_position": None, "next_arrival": "12 min"},
+        "realtime_updates": {"delay_min": 5, "vehicle_position": None, "next_arrival": "12 min", "source": "estimate"},
     })
 
     if disability == "wheelchair":

@@ -49,5 +49,12 @@ using the **anon** key (read-only via RLS). The backend writes with the service 
 ## Environment
 See `.env.example`. Never commit `.env`.
 
+## Transit data
+Metro stations and timetable headways come from [ungalsoththu/ChennaiGTFS](https://github.com/ungalsoththu/ChennaiGTFS)
+(CMRL, unofficial, ODbL, attribution: UngalSoththu / Ithu Ungal Soththu), stored in `app/data/cmrl.json`
+(rebuild with `python -m scripts.build_cmrl <dir>`). It is static GTFS, so Metro "next arrival" is
+timetable-based (`source: "schedule"`). Set `GTFS_RT_URL` to use a live GTFS-RT feed if one becomes available.
+Bus and cab times are estimates (`source: "estimate"`).
+
 ## Load test
 `python -m scripts.loadtest https://<host> 100`
