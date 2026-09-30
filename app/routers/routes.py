@@ -49,6 +49,61 @@ def _mapbox(profile: str, a, b) -> dict | None:
         return None
 
 
+LINES = CMRL.get("lines", {})  # line name -> ordered [lat, lon] station points
+STATION_MATCH_KM = 0.15
+
+
+def _line_index(pts, p):
+    i = min(range(len(pts)), key=lambda k: _km(*pts[k], *p))
+    return i if _km(*pts[i], *p) <= STATION_MATCH_KM else None
+
+
+def _slice(pts, i, j):
+    return pts[i:j + 1] if i <= j else pts[j:i + 1][::-1]
+
+
+def _metro_path(s_pt, e_pt) -> list[list[float]]:
+    """[lat, lon] points along CMRL lines between two stations (transfers at interchanges)."""
+    best = None
+    for pts in LINES.values():
+        i, j = _line_index(pts, s_pt), _line_index(pts, e_pt)
+        if i is not None and j is not None:
+            cand = _slice(pts, i, j)
+            best = cand if best is None or len(cand) < len(best) else best
+    if best:
+        return best
+    for name_a, pa in LINES.items():
+        for name_b, pb in LINES.items():
+            if name_a == name_b:
+                continue
+            i, j = _line_index(pa, s_pt), _line_index(pb, e_pt)
+            if i is None or j is None:
+                continue
+            for x, pt in enumerate(pa):  # interchange = point that is also on line B
+                y = _line_index(pb, pt)
+                if y is not None:
+                    cand = _slice(pa, i, x) + _slice(pb, y, j)[1:]
+                    best = cand if best is None or len(cand) < len(best) else best
+    return best or [list(s_pt), list(e_pt)]
+
+
+def _straight(a, b) -> dict:
+    return {"type": "LineString", "coordinates": [[a[1], a[0]], [b[1], b[0]]]}
+
+
+def _walk_leg(a, b) -> list[list[float]]:
+    """[lon, lat] coordinates for a walking leg; straight line if Mapbox is unavailable."""
+    leg = _mapbox("walking", a, b)
+    return leg["geometry"]["coordinates"] if leg else _straight(a, b)["coordinates"]
+
+
+def _metro_geometry(a, b, s_pt, e_pt) -> dict:
+    coords = _walk_leg(a, s_pt)
+    coords += [[lon, lat] for lat, lon in _metro_path(s_pt, e_pt)]
+    coords += _walk_leg(e_pt, b)
+    return {"type": "LineString", "coordinates": coords}
+
+
 @router.get("/routes")
 def get_routes(start: str, end: str, disability: str = "wheelchair"):
     a, b = _parse(start), _parse(end)
@@ -83,19 +138,21 @@ def _build_routes(a, b, disability):
             "distance": f"{metro_km + s_walk + e_walk:.1f} km",
             "accessible": True, "steps": 0, "stops": max(1, round(metro_km / 1.2)),
             "via": f"{s_name} → {e_name}",
+            "geometry": _metro_geometry(a, b, METRO_STATIONS[s_name], METRO_STATIONS[e_name]),
             "realtime_updates": get_realtime_updates(),
         })
 
     routes.append({
         "id": 2, "mode": "Accessible Cab", "duration": f"{round(drive_min + 6)} min",
         "distance": f"{km:.1f} km", "accessible": True, "steps": 0, "stops": 0,
-        "geometry": drive["geometry"] if drive else None,
+        "geometry": drive["geometry"] if drive else _straight(a, b),
         "realtime_updates": {"delay_min": 0, "vehicle_position": None, "next_arrival": "6 min", "source": "estimate"},
     })
     routes.append({
         "id": 3, "mode": "Low-floor Bus", "duration": f"{round(km / 15 * 60 + 8)} min",
         "distance": f"{km:.1f} km", "accessible": disability != "wheelchair", "steps": 2,
         "stops": max(2, round(km / 0.8)),
+        "geometry": drive["geometry"] if drive else _straight(a, b),
         "realtime_updates": {"delay_min": 5, "vehicle_position": None, "next_arrival": "12 min", "source": "estimate"},
     })
 
