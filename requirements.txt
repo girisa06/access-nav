@@ -1,0 +1,11 @@
+fastapi
+uvicorn[standard]
+supabase
+pyjwt
+bcrypt
+python-dotenv
+pydantic[email]
+pydantic-settings
+gtfs-realtime-bindings
+requests
+upstash-redis
