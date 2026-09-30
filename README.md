@@ -40,6 +40,9 @@ Send `Authorization: Bearer <token>` on every write. Reads (routes, reports, lea
 | GET | /api/sos | any | active alerts (NGO dashboard) |
 | POST | /api/sos/{id}/resolve | volunteer/ngo | |
 
+Verifiers can never verify their own reports: a single verify returns 403, bulk verify skips them
+(`skipped_own` in the response), and they are hidden from the pending queue.
+
 Bulk verify, verified, leaderboard and the SOS list/resolve are additions beyond the original contract.
 
 ## Realtime

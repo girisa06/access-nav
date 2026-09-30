@@ -100,13 +100,25 @@ def upvote(report_id: str, user: dict = Depends(current_user)):
     return {"upvotes": n}
 
 
-def _apply_verification(user: dict, ids: list[str], verification_status: str) -> str:
-    """Mark reports verified/false as this volunteer or NGO; returns the verifier type."""
+OWN_REPORT_MSG = "You can't verify a report you submitted"
+
+
+def _apply_verification(user: dict, ids: list[str], verification_status: str, skip_own: bool = False) -> tuple[str, int, int]:
+    """Mark reports verified/false as this volunteer or NGO.
+
+    Verifiers can never verify their own reports: raises 403, or with skip_own=True
+    leaves them out. Returns (verifier type, reports updated, own reports skipped).
+    """
     db = get_db()
-    found = db.table("reports").select("id").in_("id", ids).execute().data
+    found = db.table("reports").select("id, reported_by").in_("id", ids).execute().data
     if not found:
         raise HTTPException(404, "Report not found")
-    ids = [r["id"] for r in found]
+    own = [r for r in found if r["reported_by"] == user["id"]]
+    if own and not skip_own:
+        raise HTTPException(403, OWN_REPORT_MSG)
+    ids = [r["id"] for r in found if r["reported_by"] != user["id"]]
+    if not ids:
+        raise HTTPException(403, OWN_REPORT_MSG)
 
     vtype = user["user_type"]
     if vtype == "volunteer":
@@ -131,14 +143,15 @@ def _apply_verification(user: dict, ids: list[str], verification_status: str) ->
     table = "volunteers" if vtype == "volunteer" else "ngos"
     db.table(table).update({"total_verified": (prof[0]["total_verified"] or 0) + len(ids)}).eq("id", prof[0]["id"]).execute()
     _bump_reports()
-    return vtype
+    return vtype, len(ids), len(own)
 
 
 @router.post("/reports/{report_id}/verify")
 def verify(report_id: str, body: VerifyRequest, user: dict = Depends(verifier_user)):
     if body.verifier_id and body.verifier_id != user["id"]:
         raise HTTPException(403, "verifier_id does not match token")
-    return {"verified_by_type": _apply_verification(user, [report_id], body.verification_status)}
+    vtype, _, _ = _apply_verification(user, [report_id], body.verification_status)
+    return {"verified_by_type": vtype}
 
 
 class BulkVerifyRequest(BaseModel):
@@ -153,8 +166,8 @@ def bulk_verify(body: BulkVerifyRequest, user: dict = Depends(verifier_user)):
         raise HTTPException(403, "Only NGOs can bulk verify")
     if not body.report_ids:
         raise HTTPException(400, "report_ids is empty")
-    vtype = _apply_verification(user, body.report_ids, body.verification_status)
-    return {"verified_by_type": vtype, "count": len(body.report_ids)}
+    vtype, updated, skipped = _apply_verification(user, body.report_ids, body.verification_status, skip_own=True)
+    return {"verified_by_type": vtype, "count": updated, "skipped_own": skipped}
 
 
 @router.get("/dashboard/verified")
@@ -183,6 +196,8 @@ def pending_reports(verifier_id: Optional[str] = None, user: dict = Depends(veri
     rows = (
         get_db().table("reports").select(REPORT_COLS)
         .eq("verification_status", "unverified")
+        # own reports are excluded; keep author-less (seed) reports, which a plain neq would drop
+        .or_(f"reported_by.is.null,reported_by.neq.{user['id']}")
         .order("created_at", desc=True).limit(100)
         .execute().data
     )
