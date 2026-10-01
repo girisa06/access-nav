@@ -23,12 +23,29 @@ class LoginRequest(BaseModel):
     password: str
 
 
+DisabilityProfile = Literal["wheelchair", "cognitive", "hearing_impaired", "visually_impaired"]
+
+
+class ProfileUpdate(BaseModel):
+    disability_profile: DisabilityProfile
+
+
+def _profile_field(user_row: dict) -> dict:
+    """The saved accessibility profile (null until the user chooses one).
+
+    Omitted entirely if the users.disability_profile column does not exist yet, so the frontend
+    can tell "not chosen" (null) from "not supported by this database" (absent).
+    """
+    return {"disability_profile": user_row["disability_profile"]} if "disability_profile" in user_row else {}
+
+
 def _auth_response(user: dict) -> dict:
     return {
         "user_id": user["id"],
         "email": user["email"],
         "user_type": user["user_type"],
         "token": create_token(user["id"], user["user_type"]),
+        **_profile_field(user),
     }
 
 
@@ -72,15 +89,27 @@ def register(body: RegisterRequest):
 def me(user: dict = Depends(current_user)):
     """Current account, including whether an organization has been approved."""
     db = get_db()
-    row = db.table("users").select("id, email, user_type").eq("id", user["id"]).execute().data
+    row = db.table("users").select("*").eq("id", user["id"]).execute().data
     if not row:
         raise HTTPException(401, "Account no longer exists")
-    out = {"user_id": row[0]["id"], "email": row[0]["email"], "user_type": row[0]["user_type"]}
+    out = {"user_id": row[0]["id"], "email": row[0]["email"], "user_type": row[0]["user_type"], **_profile_field(row[0])}
     if row[0]["user_type"] == "ngo":
         ngo = db.table("ngos").select("organization_name, is_verified").eq("user_id", user["id"]).execute().data
         out["organization_name"] = ngo[0]["organization_name"] if ngo else None
         out["organization_verified"] = bool(ngo and ngo[0]["is_verified"])
     return out
+
+
+@router.put("/profile")
+def save_profile(body: ProfileUpdate, user: dict = Depends(current_user)):
+    """Save the account's accessibility profile (chosen at first sign-in, changeable in Settings)."""
+    try:
+        rows = get_db().table("users").update({"disability_profile": body.disability_profile}).eq("id", user["id"]).execute().data
+    except Exception:
+        raise HTTPException(503, "Profile storage is not set up yet")
+    if not rows:
+        raise HTTPException(404, "Account not found")
+    return {"disability_profile": body.disability_profile}
 
 
 @router.post("/login")
