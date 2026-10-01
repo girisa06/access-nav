@@ -13,6 +13,7 @@ class Settings(BaseSettings):
     upstash_redis_rest_url: str = ""
     upstash_redis_rest_token: str = ""
     cors_origins: str = "http://localhost:5173"
+    admin_api_key: str = ""  # enables /api/admin/*; leave empty to disable
 
 
 settings = Settings()

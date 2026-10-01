@@ -1,9 +1,10 @@
 from typing import Literal, Optional
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, EmailStr
 
 from ..db import get_db
+from ..deps import current_user
 from ..security import create_token, hash_password, verify_password
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
@@ -65,6 +66,21 @@ def register(body: RegisterRequest):
         ).execute()
 
     return _auth_response(user)
+
+
+@router.get("/me")
+def me(user: dict = Depends(current_user)):
+    """Current account, including whether an organization has been approved."""
+    db = get_db()
+    row = db.table("users").select("id, email, user_type").eq("id", user["id"]).execute().data
+    if not row:
+        raise HTTPException(401, "Account no longer exists")
+    out = {"user_id": row[0]["id"], "email": row[0]["email"], "user_type": row[0]["user_type"]}
+    if row[0]["user_type"] == "ngo":
+        ngo = db.table("ngos").select("organization_name, is_verified").eq("user_id", user["id"]).execute().data
+        out["organization_name"] = ngo[0]["organization_name"] if ngo else None
+        out["organization_verified"] = bool(ngo and ngo[0]["is_verified"])
+    return out
 
 
 @router.post("/login")

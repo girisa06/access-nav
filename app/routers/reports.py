@@ -101,6 +101,7 @@ def upvote(report_id: str, user: dict = Depends(current_user)):
 
 
 OWN_REPORT_MSG = "You can't verify a report you submitted"
+ORG_PENDING_MSG = "Your organization is awaiting approval. You can verify reports once an administrator approves it."
 
 
 def _apply_verification(user: dict, ids: list[str], verification_status: str, skip_own: bool = False) -> tuple[str, int, int]:
@@ -125,10 +126,12 @@ def _apply_verification(user: dict, ids: list[str], verification_status: str, sk
         prof = db.table("volunteers").select("id, name, total_verified").eq("user_id", user["id"]).execute().data
         name_key = "name"
     else:
-        prof = db.table("ngos").select("id, organization_name, total_verified").eq("user_id", user["id"]).execute().data
+        prof = db.table("ngos").select("id, organization_name, total_verified, is_verified").eq("user_id", user["id"]).execute().data
         name_key = "organization_name"
     if not prof:
         raise HTTPException(403, "Verifier profile not found")
+    if vtype == "ngo" and not prof[0]["is_verified"]:
+        raise HTTPException(403, ORG_PENDING_MSG)
 
     status = "false" if verification_status in ("false", "rejected") else "verified"
     db.table("reports").update(

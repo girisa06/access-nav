@@ -37,8 +37,13 @@ Send `Authorization: Bearer <token>` on every write. Reads (routes, reports, lea
 | GET | /api/dashboard/verified | volunteer/ngo | reports this verifier handled |
 | GET | /api/dashboard/leaderboard | - | |
 | POST | /api/sos | any | `{latitude, longitude}` |
-| GET | /api/sos | any | active alerts (NGO dashboard) |
-| POST | /api/sos/{id}/resolve | volunteer/ngo | |
+| GET | /api/sos | volunteer / approved org | active alerts with live locations |
+| POST | /api/sos/{id}/location | alert owner | live position update; returns `status` so the client knows when to stop |
+| POST | /api/sos/{id}/cancel | alert owner | stop the alert |
+| POST | /api/sos/{id}/resolve | volunteer / approved org | |
+| GET | /api/auth/me | any | account + `organization_verified` for organizations |
+| GET | /api/admin/organizations?status=pending\|approved\|all | `X-Admin-Key` | |
+| POST | /api/admin/organizations/{id}/approve, /revoke | `X-Admin-Key` | organizations must be approved before they can verify reports or see SOS alerts |
 
 Verifiers can never verify their own reports: a single verify returns 403, bulk verify skips them
 (`skipped_own` in the response), and they are hidden from the pending queue.

@@ -7,7 +7,7 @@ from fastapi.responses import JSONResponse
 
 from .cache import backend_name
 from .config import settings
-from .routers import auth, reports, routes, sos
+from .routers import admin, auth, reports, routes, sos
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 log = logging.getLogger("accessinav")
@@ -38,6 +38,7 @@ async def log_requests(request: Request, call_next):
 
 
 app.include_router(auth.router)
+app.include_router(admin.router)
 app.include_router(reports.router)
 app.include_router(routes.router)
 app.include_router(sos.router)

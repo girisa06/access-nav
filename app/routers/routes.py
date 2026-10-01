@@ -30,6 +30,18 @@ def _parse(s: str) -> tuple[float, float]:
         raise HTTPException(400, "Expected lat,lon")
 
 
+STATION_DISPLAY = {
+    "Puratchi Thalaivar Dr. M.G. Ramachandran Central": "Chennai Central",
+    "Puratchi Thalaivi Dr. J. Jayalalithaa CMBT": "CMBT, Koyambedu",
+    "Arignar Anna Alandur": "Alandur",
+    "Chennai International Airport": "Chennai Airport",
+}
+
+
+def _display(name: str) -> str:
+    return STATION_DISPLAY.get(name, name)
+
+
 def _nearest(lat, lon) -> tuple[str, float]:
     name = min(METRO_STATIONS, key=lambda n: _km(lat, lon, *METRO_STATIONS[n]))
     return name, _km(lat, lon, *METRO_STATIONS[name])
@@ -133,11 +145,13 @@ def _build_routes(a, b, disability):
     if s_name != e_name and s_walk < 3 and e_walk < 3:
         metro_km = _km(*METRO_STATIONS[s_name], *METRO_STATIONS[e_name]) * 1.15
         total = round(metro_km / 35 * 60 + (s_walk + e_walk) / 4.5 * 60 + 5)  # ride + walk + wait
+        path = _metro_path(METRO_STATIONS[s_name], METRO_STATIONS[e_name])
         routes.append({
             "id": 1, "mode": "Metro", "duration": f"{total} min",
             "distance": f"{metro_km + s_walk + e_walk:.1f} km",
-            "accessible": True, "steps": 0, "stops": max(1, round(metro_km / 1.2)),
-            "via": f"{s_name} → {e_name}",
+            "accessible": True, "steps": 0, "stops": max(1, len(path) - 1),  # stations along the line path
+            "board_at": _display(s_name), "exit_at": _display(e_name),
+            "via": f"{_display(s_name)} → {_display(e_name)}",
             "geometry": _metro_geometry(a, b, METRO_STATIONS[s_name], METRO_STATIONS[e_name]),
             "realtime_updates": get_realtime_updates(),
         })
